@@ -1,4 +1,5 @@
 @echo off
+set "PATH=%PATH%;C:\Windows\System32;C:\Windows;C:\Windows\System32\WindowsPowerShell\v1.0"
 title SmartDesk AI Launcher
 echo ========================================================
 echo    SmartDesk AI - Cognitive ITSM Platform Launcher

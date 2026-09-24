@@ -1,3 +1,5 @@
+$env:PATH = "$env:PATH;C:\Windows\System32;C:\Windows;C:\Windows\System32\WindowsPowerShell\v1.0"
+
 Write-Host "========================================================" -ForegroundColor Cyan
 Write-Host "   SmartDesk AI - Cognitive ITSM Platform Launcher" -ForegroundColor Green
 Write-Host "========================================================" -ForegroundColor Cyan

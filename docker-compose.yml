@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: originx-backend
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - NODE_ENV=production
+      - COMPANY_NAME=Origin X
+      - DATABASE_URL=postgresql://originx_admin:originx_secure_pass@db:5432/originx_itsm
+      - USE_MOCK_SERVICES=true
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - originx-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: originx-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:5000
+      - NEXT_PUBLIC_COMPANY_NAME=Origin X
+    depends_on:
+      - backend
+    networks:
+      - originx-network
+
+  db:
+    image: postgres:16-alpine
+    container_name: originx-db
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: originx_admin
+      POSTGRES_PASSWORD: originx_secure_pass
+      POSTGRES_DB: originx_itsm
+    volumes:
+      - originx_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U originx_admin -d originx_itsm"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - originx-network
+
+volumes:
+  originx_pgdata:
+    driver: local
+
+networks:
+  originx-network:
+    driver: bridge

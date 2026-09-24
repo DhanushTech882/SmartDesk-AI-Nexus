@@ -9,8 +9,8 @@ import config
 
 # Set page configuration with a modern title and icon
 st.set_page_config(
-    page_title="SmartDesk AI",
-    page_icon="🤖",
+    page_title="Origin X | SmartDesk AI",
+    page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -663,8 +663,8 @@ resolved_pct = (resolved_count / total_sidebar * 100) if total_sidebar > 0 else 
 
 # Sidebar Custom Navigation
 with st.sidebar:
-    st.markdown('<div class="sidebar-header"><span class="pulsing-dot"></span>SmartDesk AI</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sidebar-subheader">Enterprise ITSM Console</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-header"><span class="pulsing-dot"></span>Origin X</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-subheader">Enterprise Cognitive ITSM</div>', unsafe_allow_html=True)
     st.markdown("---")
     
     st.markdown("#### Navigation")

@@ -226,6 +226,36 @@ const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPE
 
 // ----------------- API ENDPOINTS -----------------
 
+// 0. Root Status Health Endpoint
+app.get('/', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>Origin X ITSM Backend</title>
+        <style>
+          body { font-family: system-ui, sans-serif; background: #090d16; color: #f8fafc; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+          .card { background: #0f172a; padding: 40px; border-radius: 16px; border: 1px solid #1e293b; text-align: center; max-width: 500px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+          h1 { color: #38bdf8; margin-top: 0; }
+          .status { display: inline-block; padding: 6px 12px; background: rgba(16,185,129,0.15); border: 1px solid #10b981; color: #34d399; border-radius: 20px; font-weight: bold; font-size: 13px; margin-bottom: 20px; }
+          p { color: #94a3b8; font-size: 14px; line-height: 1.6; }
+          a.btn { display: inline-block; margin-top: 15px; padding: 10px 20px; background: #6366f1; color: white; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 14px; }
+          a.btn:hover { background: #4f46e5; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <h1>⚡ Origin X ITSM</h1>
+          <div class="status">● Backend API Server: Online (Port 5000)</div>
+          <p>This is the <strong>REST API backend</strong> providing AI transcription, self-healing runbooks, and embedded ticket storage.</p>
+          <p>To view and use the <strong>Full User Interface</strong>, make sure the frontend is running and visit:</p>
+          <a class="btn" href="http://localhost:3000" target="_blank">Open Frontend (http://localhost:3000) ➔</a>
+        </div>
+      </body>
+    </html>
+  `);
+});
+
 // 1. Ingest Audio Transcription & Autonomous Classification
 app.post('/api/transcript', upload.single('audio'), async (req, res) => {
   try {
@@ -432,6 +462,28 @@ app.get('/api/history', (req, res) => {
     console.error('History fetch error:', error);
     return res.status(500).json({ error: 'Failed to fetch tickets' });
   }
+});
+
+// 2.1 Fetch All Tickets for Portal
+app.get('/api/tickets', (req, res) => {
+  try {
+    const store = loadEmbeddedStore();
+    return res.json(store.tickets || []);
+  } catch (error) {
+    console.error('Tickets fetch error:', error);
+    return res.status(500).json({ error: 'Failed to fetch tickets' });
+  }
+});
+
+// 2.2 Company Branding & Settings
+app.get('/api/company', (req, res) => {
+  return res.json({
+    name: 'Origin X',
+    domain: 'originx.corp',
+    supportEmail: 'it-support@originx.corp',
+    slaComplianceTarget: 99.5,
+    version: '1.0.0-enterprise'
+  });
 });
 
 // 3. Execute Autonomous Self-Healing Runbook
