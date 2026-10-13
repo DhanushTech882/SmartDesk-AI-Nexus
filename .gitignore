@@ -18,10 +18,9 @@ frontend/out/
 
 # Environment variables & secrets
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+backend/.env
+.env.*
+*.tsbuildinfo
 
 # Databases & local persistent stores
 tickets.db

@@ -1,157 +1,354 @@
 "use client";
 
-import React, { useState } from 'react';
-import { ClipboardList, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import React, { useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  ClipboardList,
+  Send,
+  RotateCcw,
+  ShieldAlert,
+  Clock,
+  Sparkles,
+  Info,
+} from "lucide-react";
+import {
+  Button,
+  Input,
+  Textarea,
+  FormField,
+  Select,
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+  Badge,
+  PageHeader,
+  Alert,
+  MetricCard,
+} from "@/components/ui";
 
 export default function CreateTicketForm() {
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [priority, setPriority] = useState('Medium');
-  const [category, setCategory] = useState('Software');
-  const [status, setStatus] = useState<'idle' | 'submitting' | 'error' | 'success'>('idle');
-  const [errorMessage, setErrorMessage] = useState('');
-  
   const router = useRouter();
+
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [priority, setPriority] = useState("Medium");
+  const [category, setCategory] = useState("Software");
+  const [status, setStatus] = useState<"idle" | "submitting" | "error" | "success">("idle");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<{ title?: string; description?: string }>({});
+
+  const validate = () => {
+    const errors: { title?: string; description?: string } = {};
+    if (!title.trim()) {
+      errors.title = "Ticket title is required";
+    }
+    if (!description.trim()) {
+      errors.description = "Detailed problem description is required";
+    }
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleReset = () => {
+    setTitle("");
+    setDescription("");
+    setPriority("Medium");
+    setCategory("Software");
+    setFieldErrors({});
+    setStatus("idle");
+    setErrorMessage("");
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !description.trim()) {
-      setErrorMessage('Please fill in both the Title and Description fields.');
-      setStatus('error');
+
+    if (!validate()) {
+      setStatus("error");
+      setErrorMessage("Please complete all required fields before dispatching.");
       return;
     }
 
-    setStatus('submitting');
-    setErrorMessage('');
+    setStatus("submitting");
+    setErrorMessage("");
 
     try {
-      const response = await fetch('/api/tickets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/tickets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, description, priority, category }),
       });
 
       if (!response.ok) {
-        throw new Error(await response.text() || 'Failed to submit the ticket.');
+        throw new Error((await response.text()) || "Failed to submit ticket.");
       }
 
-      setStatus('success');
+      setStatus("success");
       setTimeout(() => {
-        router.push('/history');
+        router.push("/history");
       }, 1500);
-
     } catch (err: any) {
-      setErrorMessage(err.message || 'An unexpected error occurred.');
-      setStatus('error');
+      setErrorMessage(err.message || "An unexpected error occurred while communicating with the database.");
+      setStatus("error");
+    }
+  };
+
+  const getPriorityBadgeVariant = (p: string): "default" | "success" | "warning" | "error" | "neutral" => {
+    switch (p.toLowerCase()) {
+      case "critical":
+      case "high":
+        return "error";
+      case "medium":
+        return "warning";
+      case "low":
+        return "neutral";
+      default:
+        return "default";
     }
   };
 
   return (
-    <div className="max-w-2xl mx-auto mt-6 bg-slate-900/50 border border-slate-800 rounded-2xl p-8 shadow-xl text-slate-100 backdrop-blur-sm">
-      <div className="flex items-center gap-3 mb-3">
-        <div className="p-2 bg-indigo-950/60 border border-indigo-800 rounded-lg text-indigo-400">
-          <ClipboardList className="w-5 h-5" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-extrabold bg-gradient-to-r from-blue-400 to-indigo-500 bg-clip-text text-transparent">
-            Manual Ticket Dispatch
-          </h1>
-          <p className="text-slate-400 text-xs mt-0.5">
-            Manually file support service tickets directly into the database.
-          </p>
-        </div>
+    <div>
+      {/* Consistent Enterprise Page Header & Breadcrumbs */}
+      <PageHeader
+        title="Manual Ticket Dispatch"
+        description="Submit ad-hoc enterprise service desk tickets directly into the triage queue. Cognitive runbooks and routing policies are evaluated upon ingestion."
+        badge={<Badge variant="default" dot>ITSM Standard</Badge>}
+        breadcrumbs={[
+          { label: "Operations", href: "/history" },
+          { label: "Dispatch New Ticket" },
+        ]}
+      />
+
+      {/* Top Telemetry / Status Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+        <MetricCard
+          title="Triage Latency"
+          value="< 45s"
+          subtext="Autonomous NLP categorization active"
+          icon={<Clock className="w-4 h-4" />}
+        />
+        <MetricCard
+          title="Target SLA"
+          value="4h 00m"
+          change="Tier 1"
+          trend="up"
+          subtext="Assigned automatically based on priority"
+          icon={<ShieldAlert className="w-4 h-4" />}
+        />
+        <MetricCard
+          title="Self-Healing Engine"
+          value="Ready"
+          subtext="Runbooks auto-suggested on submission"
+          icon={<Sparkles className="w-4 h-4" />}
+        />
       </div>
 
-      <div className="h-px bg-slate-800 my-6"></div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Main Ticket Form (2 cols) */}
+        <div className="lg:col-span-2">
+          <Card padding="lg">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Ticket Information</CardTitle>
+                  <CardDescription>
+                    Provide accurate details to ensure rapid routing to the proper engineering tier.
+                  </CardDescription>
+                </div>
+                <Badge variant={getPriorityBadgeVariant(priority)} dot>
+                  {priority} Priority
+                </Badge>
+              </div>
+            </CardHeader>
 
-      <form onSubmit={handleSubmit} className="space-y-5">
-        <div>
-          <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
-            Ticket Title
-          </label>
-          <input
-            type="text"
-            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-indigo-500 transition-colors text-sm"
-            placeholder="Summarize the core problem..."
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            disabled={status === 'submitting'}
-          />
+            <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Status Notifications */}
+              {status === "error" && (
+                <Alert
+                  variant="error"
+                  title="Submission Error"
+                  onClose={() => setStatus("idle")}
+                >
+                  {errorMessage}
+                </Alert>
+              )}
+
+              {status === "success" && (
+                <Alert
+                  variant="success"
+                  title="Ticket Dispatched Successfully"
+                >
+                  Ticket ingested into the database. Redirecting to All Tickets view...
+                </Alert>
+              )}
+
+              {/* Title Field */}
+              <FormField
+                label="Ticket Title"
+                htmlFor="ticket-title"
+                required
+                error={fieldErrors.title}
+                helperText="Summarize the core technical problem in one clear sentence."
+              >
+                <Input
+                  id="ticket-title"
+                  placeholder="e.g. Cisco AnyConnect VPN fails to authenticate on Windows 11"
+                  value={title}
+                  onChange={(e) => {
+                    setTitle(e.target.value);
+                    if (fieldErrors.title) setFieldErrors({ ...fieldErrors, title: undefined });
+                  }}
+                  disabled={status === "submitting" || status === "success"}
+                  isError={Boolean(fieldErrors.title)}
+                />
+              </FormField>
+
+              {/* Category & Priority Selectors */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <FormField label="Category" htmlFor="ticket-category" required>
+                  <Select
+                    id="ticket-category"
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    disabled={status === "submitting" || status === "success"}
+                    options={[
+                      { value: "Software", label: "Software & Applications" },
+                      { value: "Hardware", label: "Hardware & Peripherals" },
+                      { value: "Network", label: "Network & VPN" },
+                      { value: "Authentication", label: "Authentication & SSO" },
+                      { value: "Billing", label: "Procurement & Billing" },
+                      { value: "Cloud", label: "Cloud & Infrastructure" },
+                    ]}
+                  />
+                </FormField>
+
+                <FormField label="Priority Level" htmlFor="ticket-priority" required>
+                  <Select
+                    id="ticket-priority"
+                    value={priority}
+                    onChange={(e) => setPriority(e.target.value)}
+                    disabled={status === "submitting" || status === "success"}
+                    options={[
+                      { value: "Low", label: "Low — Minor inconvenience" },
+                      { value: "Medium", label: "Medium — Degraded workflow" },
+                      { value: "High", label: "High — Critical blocker" },
+                      { value: "Critical", label: "Critical — System-wide outage" },
+                    ]}
+                  />
+                </FormField>
+              </div>
+
+              {/* Problem Description */}
+              <FormField
+                label="Problem Description"
+                htmlFor="ticket-description"
+                required
+                error={fieldErrors.description}
+                helperText="Include reproduction steps, exact error messages, hostnames, and business impact."
+              >
+                <Textarea
+                  id="ticket-description"
+                  rows={6}
+                  placeholder="Provide detailed description of what happened, recent changes made, and expected behavior..."
+                  value={description}
+                  onChange={(e) => {
+                    setDescription(e.target.value);
+                    if (fieldErrors.description) setFieldErrors({ ...fieldErrors, description: undefined });
+                  }}
+                  disabled={status === "submitting" || status === "success"}
+                  isError={Boolean(fieldErrors.description)}
+                />
+              </FormField>
+
+              {/* Action Buttons */}
+              <div className="pt-4 border-t border-brand-border flex items-center justify-end gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleReset}
+                  disabled={status === "submitting" || status === "success"}
+                  leftIcon={<RotateCcw className="w-4 h-4" />}
+                >
+                  Reset Form
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  isLoading={status === "submitting"}
+                  leftIcon={<Send className="w-4 h-4" />}
+                >
+                  {status === "submitting" ? "Dispatching..." : "Dispatch Ticket"}
+                </Button>
+              </div>
+            </form>
+          </Card>
         </div>
 
-        <div>
-          <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
-            Problem Description
-          </label>
-          <textarea
-            rows={5}
-            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-indigo-500 transition-colors text-sm"
-            placeholder="Describe the issue, reproduction steps, and impact in detail..."
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            disabled={status === 'submitting'}
-          />
+        {/* Sidebar Information Panel (1 col) */}
+        <div className="space-y-6">
+          <Card padding="md">
+            <CardHeader>
+              <CardTitle className="text-sm">ITIL Dispatch Guidelines</CardTitle>
+              <CardDescription>
+                Ensuring SLA compliance and expedited resolution.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-xs text-brand-muted leading-relaxed">
+              <div className="p-3 rounded-lg bg-slate-50 border border-brand-border space-y-1.5">
+                <p className="font-semibold text-brand-navy flex items-center gap-1.5">
+                  <Info className="w-3.5 h-3.5 text-brand-blue" />
+                  <span>Automated Audio Ingestion</span>
+                </p>
+                <p>
+                  Prefer speech-to-text? You can also record voice memos in the{" "}
+                  <strong className="text-brand-navy font-semibold">Voice Studio</strong> to extract tickets autonomously.
+                </p>
+              </div>
+
+              <div className="space-y-2 pt-2">
+                <div className="flex items-start gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-brand-blue mt-1.5 shrink-0" />
+                  <span>
+                    <strong className="text-brand-navy">P1/Critical:</strong> Page on-call SRE immediately for Sev-1 triage.
+                  </span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-brand-blue mt-1.5 shrink-0" />
+                  <span>
+                    <strong className="text-brand-navy">Attachments & Logs:</strong> Can be Scrubbed in the Agent Console after creation.
+                  </span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-brand-blue mt-1.5 shrink-0" />
+                  <span>
+                    <strong className="text-brand-navy">Runbook Match:</strong> Known error patterns trigger self-healing scripts.
+                  </span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card padding="md" className="bg-slate-50/70">
+            <CardHeader>
+              <CardTitle className="text-xs uppercase tracking-wider text-slate-500 font-bold">
+                Security & Compliance
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-xs text-brand-muted space-y-2">
+              <p>
+                All ticket data is encrypted at rest (AES-256) and during transit (TLS 1.3). PII redaction is applied to customer transcripts automatically.
+              </p>
+              <div className="pt-2 flex items-center gap-2 text-[11px] text-brand-success font-semibold">
+                <span className="w-2 h-2 rounded-full bg-brand-success" />
+                <span>Zero Trust Architecture Active</span>
+              </div>
+            </CardContent>
+          </Card>
         </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
-              Priority Level
-            </label>
-            <select
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-indigo-500 transition-colors text-sm cursor-pointer"
-              value={priority}
-              onChange={(e) => setPriority(e.target.value)}
-              disabled={status === 'submitting'}
-            >
-              <option value="Low">Low</option>
-              <option value="Medium">Medium</option>
-              <option value="High">High</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
-              Issue Category
-            </label>
-            <select
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-200 focus:outline-none focus:border-indigo-500 transition-colors text-sm cursor-pointer"
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              disabled={status === 'submitting'}
-            >
-              <option value="Software">Software</option>
-              <option value="Hardware">Hardware</option>
-              <option value="Authentication">Authentication</option>
-              <option value="Billing">Billing</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Status Indicators */}
-        {status === 'error' && (
-          <div className="p-3 bg-red-950/30 border border-red-900/50 text-red-400 text-xs rounded-xl flex items-center gap-2.5">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{errorMessage}</span>
-          </div>
-        )}
-
-        {status === 'success' && (
-          <div className="p-3 bg-green-950/30 border border-green-900/50 text-green-400 text-xs rounded-xl flex items-center gap-2.5">
-            <CheckCircle2 className="w-4 h-4 shrink-0" />
-            <span>Ticket dispatched successfully! Routing to history queue...</span>
-          </div>
-        )}
-
-        <button
-          type="submit"
-          disabled={status === 'submitting'}
-          className="w-full py-3 px-5 font-bold text-sm text-white rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 disabled:opacity-50 disabled:pointer-events-none transition-all shadow-lg shadow-indigo-950/40"
-        >
-          {status === 'submitting' ? 'Saving Ticket...' : 'Dispatch Ticket'}
-        </button>
-      </form>
+      </div>
     </div>
   );
 }

@@ -22,11 +22,9 @@ start http://localhost:3000
 echo.
 echo ========================================================
 echo   SmartDesk AI is now LIVE!
-echo   Frontend:  http://localhost:3000
-echo   Backend:   http://localhost:5000
+echo   Single Host URL: http://localhost:3000
 echo ========================================================
 echo.
-echo Press any key to also launch the local Streamlit console, or close this window.
+echo Application running successfully. You can keep this window open or minimize it.
 pause >nul
 
-start "SmartDesk AI Streamlit Workbench" cmd /k "streamlit run app.py"

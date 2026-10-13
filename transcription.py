@@ -67,14 +67,16 @@ def get_mock_transcript(filename: str = "") -> str:
 def transcribe_audio(file_bytes: bytes, filename: str = "") -> str:
     """
     Transcribes audio bytes into text.
-    If USE_MOCK_SERVICES is True, returns a mock transcript.
-    Otherwise, writes the bytes to a temp file and sends it to Groq Whisper API.
+    Validates audio file and sends it to Groq Whisper API (whisper-large-v3).
+    If USE_MOCK_SERVICES is True and no API key is provided, falls back to mock.
     """
-    if USE_MOCK_SERVICES:
-        return get_mock_transcript(filename)
-    
+    if not file_bytes or len(file_bytes) == 0:
+        raise ValueError("Audio file is empty.")
+
     if not GROQ_API_KEY:
-        raise ValueError("Groq API key is missing but USE_MOCK_SERVICES is set to False.")
+        if USE_MOCK_SERVICES:
+            return get_mock_transcript(filename)
+        raise ValueError("Groq API key is missing. Please set GROQ_API_KEY.")
         
     client = Groq(api_key=GROQ_API_KEY)
     

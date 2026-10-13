@@ -15,9 +15,17 @@ export default function VoiceIntakeStudio() {
   const [file, setFile] = useState<File | null>(null);
   const [dragActive, setDragActive] = useState(false);
   
-  // Pipeline status: idle | uploading | transcribing | analyzing | complete | error
-  const [pipelineStage, setPipelineStage] = useState<'idle' | 'uploading' | 'analyzing' | 'complete' | 'error'>('idle');
+  // Pipeline status: idle | transcribing | transcribed | extracting | complete | error
+  const [pipelineStage, setPipelineStage] = useState<'idle' | 'transcribing' | 'transcribed' | 'extracting' | 'complete' | 'error'>('idle');
   const [statusMessage, setStatusMessage] = useState('');
+  const [currentTranscript, setCurrentTranscript] = useState<{
+    text: string;
+    transcriptId?: string;
+    duration?: number | null;
+    language?: string | null;
+    wordTimestamps?: any[] | null;
+  } | null>(null);
+  const [lastFailedStage, setLastFailedStage] = useState<'transcribe' | 'extract' | 'pipeline' | null>(null);
   const [generatedTicket, setGeneratedTicket] = useState<any | null>(null);
   const [selectedWordIndex, setSelectedWordIndex] = useState<number | null>(null);
 
@@ -86,9 +94,12 @@ export default function VoiceIntakeStudio() {
   const startRecording = async () => {
     try {
       setGeneratedTicket(null);
+      setCurrentTranscript(null);
       setAudioBlob(null);
       setFile(null);
       setRecordingDuration(0);
+      setPipelineStage('idle');
+      setStatusMessage('');
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -109,8 +120,12 @@ export default function VoiceIntakeStudio() {
       };
 
       mediaRecorder.onstop = () => {
-        const blob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+        const mimeType = mediaRecorder.mimeType || 'audio/webm';
+        const ext = mimeType.includes('wav') ? '.wav' : mimeType.includes('ogg') ? '.ogg' : '.webm';
+        const blob = new Blob(audioChunksRef.current, { type: mimeType });
+        const recordedFile = new File([blob], `recorded_voice_${Date.now()}${ext}`, { type: mimeType });
         setAudioBlob(blob);
+        setFile(recordedFile);
         setAudioUrl(URL.createObjectURL(blob));
         // Stop audio tracks
         stream.getTracks().forEach((track) => track.stop());
@@ -154,8 +169,12 @@ export default function VoiceIntakeStudio() {
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const selected = e.dataTransfer.files[0];
       setFile(selected);
+      setAudioBlob(selected);
       setAudioUrl(URL.createObjectURL(selected));
       setGeneratedTicket(null);
+      setCurrentTranscript(null);
+      setPipelineStage('idle');
+      setStatusMessage('');
     }
   };
 
@@ -163,44 +182,152 @@ export default function VoiceIntakeStudio() {
     if (e.target.files && e.target.files[0]) {
       const selected = e.target.files[0];
       setFile(selected);
+      setAudioBlob(selected);
       setAudioUrl(URL.createObjectURL(selected));
       setGeneratedTicket(null);
+      setCurrentTranscript(null);
+      setPipelineStage('idle');
+      setStatusMessage('');
     }
+  };
+
+  // Helper to generate valid PCM WAV audio bytes for presets
+  const createSampleWav = (durationSeconds = 1.5, freq = 440) => {
+    const sampleRate = 16000;
+    const numSamples = Math.floor(sampleRate * durationSeconds);
+    const buffer = new ArrayBuffer(44 + numSamples * 2);
+    const view = new DataView(buffer);
+    view.setUint32(0, 0x52494646, false); // "RIFF"
+    view.setUint32(4, 36 + numSamples * 2, true);
+    view.setUint32(8, 0x57415645, false); // "WAVE"
+    view.setUint32(12, 0x666d7420, false); // "fmt "
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true); // PCM format
+    view.setUint16(22, 1, true); // 1 channel
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    view.setUint32(36, 0x64617461, false); // "data"
+    view.setUint32(40, numSamples * 2, true);
+    for (let i = 0; i < numSamples; i++) {
+      const s = Math.sin((2 * Math.PI * freq * i) / sampleRate) * 0x3fff;
+      view.setInt16(44 + i * 2, s, true);
+    }
+    return new Uint8Array(buffer);
   };
 
   // Load preset demo file
   const loadPresetAudio = async (presetType: 'vpn' | 'laptop' | 'okta') => {
     setGeneratedTicket(null);
-    const mockFile = new File(["dummy_audio_bytes"], `test_${presetType}.wav`, { type: 'audio/wav' });
+    setCurrentTranscript(null);
+    setPipelineStage('idle');
+    setStatusMessage('');
+    const freq = presetType === 'vpn' ? 320 : presetType === 'laptop' ? 440 : 540;
+    const wavBytes = createSampleWav(1.8, freq);
+    const mockFile = new File([wavBytes], `sample_${presetType}.wav`, { type: 'audio/wav' });
     setFile(mockFile);
     setAudioBlob(mockFile);
-    setAudioUrl(null);
+    setAudioUrl(URL.createObjectURL(mockFile));
   };
 
-  // Process & Ingest to Cognitive Pipeline
-  const processAudioIngestion = async () => {
+  // STAGE 1: Audio Transcription
+  const handleGenerateTranscript = async () => {
     const audioPayload = file || audioBlob;
-    if (!audioPayload) return;
+    if (!audioPayload) {
+      setPipelineStage('error');
+      setStatusMessage('Please select an audio file or record a voice note first.');
+      return false;
+    }
 
-    setPipelineStage('uploading');
+    if (audioPayload.size === 0) {
+      setPipelineStage('error');
+      setStatusMessage('The selected audio file is empty (0 bytes).');
+      return false;
+    }
+
+    setPipelineStage('transcribing');
     setStatusMessage('Uploading audio stream to Whisper-large-v3...');
+    setGeneratedTicket(null);
 
     const formData = new FormData();
-    formData.append('audio', audioPayload, (audioPayload as File).name || 'voice_intake.wav');
+    const fileName = (audioPayload as File).name || 'voice_intake.wav';
+    formData.append('audio', audioPayload, fileName);
 
     try {
-      setTimeout(() => {
-        setPipelineStage('analyzing');
-        setStatusMessage('Extracting ITIL metadata & evaluating autonomous runbooks with LLaMA-3.1...');
-      }, 1200);
-
-      const res = await fetch('/api/transcript', {
+      const res = await fetch('/api/transcribe', {
         method: 'POST',
         body: formData,
       });
 
       if (!res.ok) {
-        throw new Error((await res.text()) || 'Pipeline ingestion failed.');
+        let errMsg = 'Transcription request failed.';
+        try {
+          const errJson = await res.json();
+          errMsg = errJson.error || errMsg;
+        } catch (_) {
+          errMsg = (await res.text()) || errMsg;
+        }
+        throw new Error(errMsg);
+      }
+
+      const data = await res.json();
+      const text = data.transcript || data.text;
+      if (!text) {
+        throw new Error('Transcription provider returned empty text.');
+      }
+
+      setCurrentTranscript({
+        text,
+        transcriptId: data.transcriptId,
+        duration: data.duration,
+        language: data.language,
+        wordTimestamps: data.wordTimestamps
+      });
+      setPipelineStage('transcribed');
+      setStatusMessage('Audio transcribed successfully! Review transcript and proceed to ticket extraction.');
+      return true;
+    } catch (err: any) {
+      setPipelineStage('error');
+      setLastFailedStage('transcribe');
+      setStatusMessage(err.message || 'Error processing audio transcription.');
+      return false;
+    }
+  };
+
+  // STAGE 2: AI Ticket Extraction
+  const handleGenerateTicket = async () => {
+    const transcriptText = currentTranscript?.text;
+    if (!transcriptText || !transcriptText.trim()) {
+      setPipelineStage('error');
+      setStatusMessage('No transcript text available to extract. Please transcribe audio first.');
+      return;
+    }
+
+    setPipelineStage('extracting');
+    setStatusMessage('Extracting ITIL metadata & evaluating autonomous runbooks with LLaMA-3.1...');
+
+    try {
+      const res = await fetch('/api/tickets/extract', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          transcript: transcriptText,
+          transcriptId: currentTranscript.transcriptId,
+        }),
+      });
+
+      if (!res.ok) {
+        let errMsg = 'Ticket extraction failed.';
+        try {
+          const errJson = await res.json();
+          errMsg = errJson.error || errMsg;
+        } catch (_) {
+          errMsg = (await res.text()) || errMsg;
+        }
+        throw new Error(errMsg);
       }
 
       const data = await res.json();
@@ -209,7 +336,77 @@ export default function VoiceIntakeStudio() {
       setStatusMessage('Ticket triaged and routed successfully!');
     } catch (err: any) {
       setPipelineStage('error');
+      setLastFailedStage('extract');
+      setStatusMessage(err.message || 'Error extracting ITIL ticket details.');
+    }
+  };
+
+  // Combined Ingestion (End-to-End Pipeline)
+  const processAudioIngestion = async () => {
+    const audioPayload = file || audioBlob;
+    if (!audioPayload) {
+      setPipelineStage('error');
+      setStatusMessage('Please select an audio file or record a voice note first.');
+      return;
+    }
+
+    if (audioPayload.size === 0) {
+      setPipelineStage('error');
+      setStatusMessage('The selected audio file is empty (0 bytes).');
+      return;
+    }
+
+    setPipelineStage('transcribing');
+    setStatusMessage('Uploading audio stream to Whisper-large-v3...');
+    setGeneratedTicket(null);
+    setCurrentTranscript(null);
+
+    const formData = new FormData();
+    const fileName = (audioPayload as File).name || 'voice_intake.wav';
+    formData.append('audio', audioPayload, fileName);
+
+    try {
+      const res = await fetch('/api/transcript', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!res.ok) {
+        let errMsg = 'Pipeline ingestion failed.';
+        try {
+          const errJson = await res.json();
+          errMsg = errJson.error || errMsg;
+        } catch (_) {
+          errMsg = (await res.text()) || errMsg;
+        }
+        throw new Error(errMsg);
+      }
+
+      const data = await res.json();
+      setCurrentTranscript({
+        text: data.transcript,
+        transcriptId: data.transcriptId,
+        duration: data.ticket?.detailed_payload?.duration || null,
+        language: data.ticket?.detailed_payload?.language || null,
+        wordTimestamps: data.wordTimestamps
+      });
+      setGeneratedTicket(data);
+      setPipelineStage('complete');
+      setStatusMessage('Ticket triaged and routed successfully!');
+    } catch (err: any) {
+      setPipelineStage('error');
+      setLastFailedStage('pipeline');
       setStatusMessage(err.message || 'Error processing audio ingestion.');
+    }
+  };
+
+  const handleRetry = () => {
+    if (lastFailedStage === 'extract' && currentTranscript?.text) {
+      handleGenerateTicket();
+    } else if (lastFailedStage === 'transcribe') {
+      handleGenerateTranscript();
+    } else {
+      processAudioIngestion();
     }
   };
 
@@ -375,26 +572,50 @@ export default function VoiceIntakeStudio() {
             </div>
           </div>
 
-          {/* Trigger Ingestion Button */}
-          <div className="mt-6">
+          {/* Trigger Ingestion Buttons */}
+          <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
             <button
-              disabled={(!audioBlob && !file) || pipelineStage === 'uploading' || pipelineStage === 'analyzing'}
-              onClick={processAudioIngestion}
-              className={`w-full py-3.5 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg ${
-                (!audioBlob && !file) || pipelineStage === 'uploading' || pipelineStage === 'analyzing'
+              id="generate-transcript-btn"
+              disabled={(!audioBlob && !file) || pipelineStage === 'transcribing' || pipelineStage === 'extracting'}
+              onClick={handleGenerateTranscript}
+              className={`py-3.5 px-4 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg ${
+                (!audioBlob && !file) || pipelineStage === 'transcribing' || pipelineStage === 'extracting'
                   ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                  : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/30'
+                  : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-900/30 active:scale-[0.99]'
               }`}
             >
-              {pipelineStage === 'uploading' || pipelineStage === 'analyzing' ? (
+              {pipelineStage === 'transcribing' ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  <span>Processing Autonomous Ingestion...</span>
+                  <span>Transcribing Audio...</span>
+                </>
+              ) : (
+                <>
+                  <FileAudio className="w-4 h-4" />
+                  <span>Generate Transcript</span>
+                </>
+              )}
+            </button>
+
+            <button
+              id="dispatch-pipeline-btn"
+              disabled={(!audioBlob && !file) || pipelineStage === 'transcribing' || pipelineStage === 'extracting'}
+              onClick={processAudioIngestion}
+              className={`py-3.5 px-4 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 shadow-lg ${
+                (!audioBlob && !file) || pipelineStage === 'transcribing' || pipelineStage === 'extracting'
+                  ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                  : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/30 active:scale-[0.99]'
+              }`}
+            >
+              {pipelineStage === 'transcribing' || pipelineStage === 'extracting' ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  <span>Processing Pipeline...</span>
                 </>
               ) : (
                 <>
                   <Sparkles className="w-4 h-4" />
-                  <span>Dispatch to Cognitive Pipeline</span>
+                  <span>Autonomous Ingestion (E2E)</span>
                 </>
               )}
             </button>
@@ -404,26 +625,115 @@ export default function VoiceIntakeStudio() {
 
       {/* Pipeline Status Banner */}
       {pipelineStage !== 'idle' && (
-        <div className={`p-4 rounded-xl border flex items-center gap-3 transition-all ${
+        <div className={`p-4 rounded-xl border flex flex-wrap items-center justify-between gap-3 transition-all ${
           pipelineStage === 'error'
             ? 'bg-red-950/40 border-red-800/60 text-red-200'
-            : pipelineStage === 'complete'
+            : pipelineStage === 'complete' || pipelineStage === 'transcribed'
             ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-200'
             : 'bg-indigo-950/40 border-indigo-800/60 text-indigo-200'
         }`}>
-          {pipelineStage === 'error' && <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />}
-          {pipelineStage === 'complete' && <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />}
-          {(pipelineStage === 'uploading' || pipelineStage === 'analyzing') && (
-            <RefreshCw className="w-5 h-5 text-indigo-400 animate-spin shrink-0" />
-          )}
-          <div className="flex-1 text-xs md:text-sm font-medium">
-            {statusMessage}
+          <div className="flex items-center gap-3">
+            {pipelineStage === 'error' && <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />}
+            {(pipelineStage === 'complete' || pipelineStage === 'transcribed') && <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />}
+            {(pipelineStage === 'transcribing' || pipelineStage === 'extracting') && (
+              <RefreshCw className="w-5 h-5 text-indigo-400 animate-spin shrink-0" />
+            )}
+            <div className="text-xs md:text-sm font-medium">
+              {statusMessage}
+            </div>
           </div>
-          {pipelineStage === 'complete' && (
-            <span className="text-xs bg-emerald-900/60 px-2.5 py-1 rounded-md text-emerald-300 font-mono">
-              200 OK
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {pipelineStage === 'error' && (
+              <button
+                id="retry-btn"
+                onClick={handleRetry}
+                className="px-3 py-1.5 rounded-lg bg-red-900/80 hover:bg-red-800 border border-red-700 text-red-100 text-xs font-bold flex items-center gap-1.5 transition-all"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Retry</span>
+              </button>
+            )}
+            {(pipelineStage === 'complete' || pipelineStage === 'transcribed') && (
+              <span className="text-xs bg-emerald-900/60 px-2.5 py-1 rounded-md text-emerald-300 font-mono">
+                200 OK
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Dedicated Transcript Card (Stage 1 Output) */}
+      {currentTranscript && (
+        <div id="transcript-display-card" className="bg-slate-900/80 border border-slate-700/80 rounded-2xl p-6 backdrop-blur-xl shadow-2xl space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-emerald-400" />
+              <h3 className="text-base font-bold text-white">Cognitive Audio Transcript</h3>
+              {currentTranscript.language && (
+                <span className="text-[10px] font-mono uppercase bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-700">
+                  {currentTranscript.language}
+                </span>
+              )}
+              {currentTranscript.duration && (
+                <span className="text-[10px] font-mono bg-slate-800 text-slate-300 px-2 py-0.5 rounded border border-slate-700">
+                  {currentTranscript.duration.toFixed(1)}s
+                </span>
+              )}
+            </div>
+            
+            {/* Stage 2 Action Trigger */}
+            <button
+              id="generate-ticket-btn"
+              disabled={pipelineStage === 'extracting'}
+              onClick={handleGenerateTicket}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-lg ${
+                pipelineStage === 'extracting'
+                  ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white shadow-indigo-900/30 active:scale-[0.99]'
+              }`}
+            >
+              {pipelineStage === 'extracting' ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Extracting ITIL Ticket...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Generate AI Ticket</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </>
+              )}
+            </button>
+          </div>
+
+          <div className="p-4 bg-slate-950/90 border border-slate-800/80 rounded-xl leading-relaxed text-sm text-slate-200">
+            {currentTranscript.wordTimestamps && currentTranscript.wordTimestamps.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {currentTranscript.wordTimestamps.map((w: any, idx: number) => {
+                  const isRedacted = typeof w.word === 'string' && w.word.includes('[REDACTED');
+                  return (
+                    <span
+                      key={idx}
+                      onClick={() => setSelectedWordIndex(idx)}
+                      className={`px-1.5 py-0.5 rounded text-xs cursor-pointer transition-colors ${
+                        selectedWordIndex === idx
+                          ? 'bg-indigo-600 text-white font-bold'
+                          : isRedacted
+                          ? 'bg-red-950/80 text-red-300 border border-red-800/60 font-mono'
+                          : 'hover:bg-slate-800 text-slate-300'
+                      }`}
+                      title={isRedacted ? 'Masked for compliance' : `Timestamp: ${w.start}s - ${w.end}s`}
+                    >
+                      {w.word}
+                    </span>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="whitespace-pre-line">{currentTranscript.text}</p>
+            )}
+          </div>
         </div>
       )}
 
